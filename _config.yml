@@ -1,10 +1,10 @@
 # Jekyll configuration
 
-name: Xixia
-description: Welcome to Xixia！
+name: Alex
+description: Welcome to Alex！
 
 # url is currently only used only for the RSS feed in feed.xml
-url: https://github.com/zxixia/jekyll-xixia
+url: https://github.com/alex-linxs
 
 # baseurl will often be '', but for a project page on gh-pages, it needs to
 # be the project name.
@@ -18,7 +18,7 @@ date_format:
   categories: "%b-%Y"
   tag: "%b-%Y"
 # Language
-lan: "en" 
+lan: "zh" 
 
 paginate: 10
 
