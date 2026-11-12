@@ -68,35 +68,36 @@ description: "单节点 Erlang/OTP MMO 服务端的进程结构、状态归属�
 3. `db:start()`
 4. `fs_game:start(Port)`
 
-`fs_game:start/1` 先启动 `fs_server:start()`，由 `lib_game:start_child/1` 在运行时动态挂载四个长期进程：
+`fs_game:start/1` 先调用 `fs_server:start/0`。`fs_server` 是启动编排函数而不是进程：它把 `?SUP_CHILD_LIST` 里的五条 child spec 交给 `lib_game:start_child/1`，后者逐个执行 `supervisor:start_child(fs_sup, ChildSpec)`。
+
+挂载顺序即列表顺序：
 
 1. `server_init_proc`（创建 `server_status` ETS）
-2. `scene_manager_proc`
-3. `scene_init_proc`（拉起常驻场景）
-4. `mod_timer`（创建 `ets_timer`）
+2. `online_player_proc`（`ets_online_player` 的唯一写者）
+3. `scene_manager_proc`（路由索引）
+4. `scene_init_proc`（拉起常驻场景）
+5. `mod_timer`（创建 `ets_timer`）
 
-四个进程挂载完成后，才启动 Cowboy 监听器 `fs_ws:start/1`。因此客户端可以登录时，场景管理器和常驻场景已经就绪。
+五个进程挂载完成后，才启动 Cowboy 监听器 `fs_ws:start/1`。因此客户端可以登录时，场景管理器和常驻场景已经就绪。
 
 两个容易踩错的点：
 
-- `fs_sup:init/1` 返回空 child list。新增单例服务应扩展 `apps/fs/src/logic/server/fs_server.erl` 中的 `?SUP_CHILD_LIST`，而不是修改 `fs_sup`。
+- `fs_sup:init/1` 返回空 child list。新增单例服务应扩展 `apps/fs/src/sys/fs_server.erl` 中的 `?SUP_CHILD_LIST`，而不是修改 `fs_sup`。
 - Ranch listener 属于 `ranch_sup`，不属于 `fs_sup`；`fs_app:stop/1` 会显式停止它。
 
 ### 2.2 进程与监督结构
 
 ```mermaid
-flowchart TB
-  subgraph FSSUP["fs_sup（空 child list，运行时动态挂载）"]
-    SRV["fs_server<br/>启动编排"]
-    SRV --> INIT["server_init_proc<br/>ETS: server_status"]
-    SRV --> MGR["scene_manager_proc<br/>路由索引 / line_version / 退避"]
-    SRV --> SCEINIT["scene_init_proc<br/>拉起常驻场景"]
-    SRV --> TIMER["mod_timer<br/>ETS: ets_timer"]
-    MGR --> LINE["scene_line_proc<br/>每线路 1 个"]
-  end
+flowchart LR
+  FSSUP["fs_sup（supervisor，child list 为空）"] --> INIT["server_init_proc<br/>ETS: server_status"]
+  FSSUP --> ONLINE["online_player_proc<br/>ets_online_player 唯一写者"]
+  FSSUP --> MGR["scene_manager_proc<br/>路由索引 / line_version / 退避"]
+  FSSUP --> SCEINIT["scene_init_proc<br/>拉起常驻场景"]
+  FSSUP --> TIMER["mod_timer<br/>ETS: ets_timer"]
+  MGR -->|"start_link"| LINE["scene_line_proc<br/>每线路 1 个"]
 ```
 
-图 1：监督结构。`fs_sup` 本身返回空 child list，长期进程由 `fs_server` 在启动时动态挂载；`scene_manager_proc` 必须先于 `scene_init_proc` 起来。
+图 1：监督结构。`fs_sup` 的 child list 为空，五个长期进程由 `fs_game:start/1` → `fs_server:start/0` 在启动时逐个 `supervisor:start_child/2` 挂载；`scene_line_proc` 由 `scene_manager_proc` 以 `start_link` 拉起，不是 `fs_sup` 的监督子进程。
 
 ```mermaid
 flowchart TB
@@ -112,6 +113,7 @@ flowchart TB
 ```
 
 图 2：连接绑定与请求路径。`fs_ws_handler` 属于 `ranch_sup`，不在 `fs_sup` 下；线路只向发送 worker 投递，不直接写 socket。
+
 ### 2.3 状态归属
 
 | 组件 | 粒度 | 持有的状态 | 生命周期 | 谁可以修改 |
@@ -119,6 +121,7 @@ flowchart TB
 | `fs_ws_handler` | 每连接 | socket、收包 buffer、`#player{}` | 连接建立到关闭 | 仅自身进程 |
 | `player_proc` | 每在线玩家 | `#player_status{}`：HP/属性、背包、任务、场景与坐标、`enter_ops` | 登录到登出 | 仅自身 `gen_server` 调用 |
 | 发送 worker | 每玩家 3 个 | 出站队列 | 随玩家进程 | `lib_server_send` |
+| `online_player_proc` | 单例 | `ets_online_player` 唯一写者、玩家 monitor 与 60s 巡检 | 全服 | 仅自身；读直接查 ETS |
 | `scene_manager_proc` | 单例 | `{SceneId,LineId} => Pid`、`PlayerId => {SceneId,LineId}`、`line_version`、退避计数 | 全服 | 仅经 `scene_manager_api` |
 | `scene_line_proc` | 每线路 | 成员表、AOI、怪物运行态、`pending_moves`、统计 | 线路创建到崩溃 | 仅 `scene_manager_proc` 与 `mon_api` 转发 |
 | `scene_init_proc` | 单例 | 常驻场景启动清单 | 全服 | 仅自身 |
