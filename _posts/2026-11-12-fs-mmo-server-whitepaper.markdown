@@ -564,11 +564,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\perf_smoke.ps1
 
 <style>
 .mermaid-figure { overflow-x: auto; margin: 1.2em 0; text-align: center; }
-.mermaid-figure svg { max-width: 100%; height: auto; }
+.mermaid-figure svg { max-width: none; height: auto; display: block; margin: 0; }
 </style>
 <script type="module">
 import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose' });
+mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose', flowchart: { useMaxWidth: false }, sequence: { useMaxWidth: false } });
 const blocks = Array.from(document.querySelectorAll('pre > code.language-mermaid'));
 for (const [i, code] of blocks.entries()) {
   try {
