@@ -129,7 +129,7 @@ flowchart TB
 图 2：状态归属与唯一写者。实线是允许的调用方向，虚线是禁止方向。
 
 ```mermaid
-flowchart LR
+flowchart TB
   C["客户端"] --> WS["fs_ws_handler<br/>socket + buffer"]
   WS --> P["player_proc<br/>#player_status{} 唯一权威"]
   P --> API["scene_manager_api"]
@@ -154,7 +154,7 @@ flowchart LR
 ### 3.1 分层与数据流
 
 ```mermaid
-flowchart LR
+flowchart TB
   FRAME["WebSocket 二进制帧"] --> SESSION["fs_ws_session:parse/1<br/>拆包 / 粘包 / 半包"]
   SESSION --> ROUTE["命令号前缀路由<br/>100 / 120 / 130 / 150 / 300"]
   ROUTE --> PT["pt_NNN:read/2<br/>二进制 → 参数"]
@@ -563,19 +563,31 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\perf_smoke.ps1
 *本文同时以 `docs/whitepaper/fs-server-whitepaper-v0.1.md` 的形式存放在代码仓库；引用的压测原始数据不随仓库提交。*
 
 <style>
-.mermaid-figure { overflow-x: auto; margin: 1.2em 0; text-align: center; }
-.mermaid-figure svg { max-width: none; height: auto; display: block; margin: 0; }
+.mermaid-figure { margin: 1.4em 0; text-align: center; }
+.mermaid-figure svg { max-width: 100%; height: auto; cursor: zoom-in; }
 </style>
 <script type="module">
 import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose', flowchart: { useMaxWidth: false }, sequence: { useMaxWidth: false } });
+mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose' });
 const blocks = Array.from(document.querySelectorAll('pre > code.language-mermaid'));
 for (const [i, code] of blocks.entries()) {
   try {
     const { svg } = await mermaid.render('mmd-' + i + '-' + Date.now(), code.textContent);
     const box = document.createElement('div');
     box.className = 'mermaid-figure';
+    box.title = '点击查看原尺寸图';
     box.innerHTML = svg;
+    box.addEventListener('click', () => {
+      const el = box.querySelector('svg');
+      if (!el) return;
+      const vb = el.viewBox.baseVal;
+      const clone = el.cloneNode(true);
+      clone.setAttribute('width', vb.width);
+      clone.setAttribute('height', vb.height);
+      clone.style.maxWidth = 'none';
+      const blob = new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml;charset=utf-8' });
+      window.open(URL.createObjectURL(blob), '_blank', 'noopener');
+    });
     code.parentElement.replaceWith(box);
   } catch (err) {
     console.error('mermaid render failed', err);
