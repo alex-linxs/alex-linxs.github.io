@@ -86,34 +86,32 @@ description: "单节点 Erlang/OTP MMO 服务端的进程结构、状态归属�
 
 ```mermaid
 flowchart TB
-  subgraph VM["单节点 BEAM VM"]
-    subgraph FSSUP["fs_sup（空 child list，运行时动态挂载）"]
-      SRV["fs_server"]
-      SRV --> INIT["server_init_proc<br/>ETS: server_status"]
-      SRV --> MGR["scene_manager_proc<br/>路由索引 / line_version / 退避"]
-      SRV --> SCEINIT["scene_init_proc<br/>拉起常驻场景"]
-      SRV --> TIMER["mod_timer<br/>ETS: ets_timer"]
-      MGR --> LINE["scene_line_proc<br/>每线路 1 个"]
-    end
-
-    subgraph RANCH["ranch_sup（独立监督树）"]
-      LISTEN["fs_ws_listener"]
-      WS["fs_ws_handler<br/>每连接 1 个，持有 socket"]
-      LISTEN --> WS
-    end
-
-    WS -->|"登录成功后绑定"| PLAYER["player_proc<br/>每在线玩家 1 个"]
-    PLAYER -->|"3 个发送 worker"| SEND["mls_Id_w_N"]
-    PLAYER -->|"scene_manager_api"| MGR
-    LINE -->|"lib_server_send"| SEND
-
-    DBP["db / emysql 连接池"]
-    PLAYER --> DBP
+  subgraph FSSUP["fs_sup（空 child list，运行时动态挂载）"]
+    SRV["fs_server<br/>启动编排"]
+    SRV --> INIT["server_init_proc<br/>ETS: server_status"]
+    SRV --> MGR["scene_manager_proc<br/>路由索引 / line_version / 退避"]
+    SRV --> SCEINIT["scene_init_proc<br/>拉起常驻场景"]
+    SRV --> TIMER["mod_timer<br/>ETS: ets_timer"]
+    MGR --> LINE["scene_line_proc<br/>每线路 1 个"]
   end
 ```
 
-图 1：进程与监督结构。`fs_ws_handler` 持有连接与半包缓冲；`player_proc` 持有玩家状态；`scene_line_proc` 持有线路状态。
+图 1：监督结构。`fs_sup` 本身返回空 child list，长期进程由 `fs_server` 在启动时动态挂载；`scene_manager_proc` 必须先于 `scene_init_proc` 起来。
 
+```mermaid
+flowchart TB
+  CL["客户端"] --> WS["fs_ws_handler<br/>socket + 半包 buffer"]
+  WS -->|"登录后 gen:call"| P["player_proc<br/>#player_status{} 唯一权威"]
+  P --> API["scene_manager_api"]
+  API --> M["scene_manager_proc<br/>路由索引"]
+  M --> L["scene_line_proc<br/>成员 / AOI / 怪物 / pending_moves"]
+  P -->|"3 个发送 worker"| S["mls_Id_w_N"]
+  L -->|"lib_server_send 扇出"| S
+  P --> DB[("db / emysql 连接池")]
+  L -.- N["约束：不访问 DB，不做长耗时计算"]
+```
+
+图 2：连接绑定与请求路径。`fs_ws_handler` 属于 `ranch_sup`，不在 `fs_sup` 下；线路只向发送 worker 投递，不直接写 socket。
 ### 2.3 状态归属
 
 | 组件 | 粒度 | 持有的状态 | 生命周期 | 谁可以修改 |
@@ -126,7 +124,7 @@ flowchart TB
 | `scene_init_proc` | 单例 | 常驻场景启动清单 | 全服 | 仅自身 |
 | MySQL | 外部 | 玩家持久数据、背包、任务、`bag_op` | 跨重启 | `player_proc` / `bag_store` / `quest_store` |
 
-图 2：状态归属与唯一写者。实线是允许的调用方向，虚线是禁止方向。
+图 3：状态归属与唯一写者。实线是允许的调用方向，虚线是禁止方向。
 
 ```mermaid
 flowchart TB
@@ -166,7 +164,7 @@ flowchart TB
   WS --> FRAME
 ```
 
-图 3：协议分层。入站与出站共用同一套 4 字节头定义。
+图 4：协议分层。入站与出站共用同一套 4 字节头定义。
 
 ### 3.2 帧格式
 
@@ -563,7 +561,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\perf_smoke.ps1
 *本文同时以 `docs/whitepaper/fs-server-whitepaper-v0.1.md` 的形式存放在代码仓库；引用的压测原始数据不随仓库提交。*
 
 <style>
-.mermaid-figure { margin: 1.4em 0; text-align: center; }
+.mermaid-figure { margin: 1.4em 0; text-align: center; overflow-x: auto; }
 .mermaid-figure svg { max-width: 100%; height: auto; cursor: zoom-in; }
 </style>
 <script type="module">
@@ -577,6 +575,13 @@ for (const [i, code] of blocks.entries()) {
     box.className = 'mermaid-figure';
     box.title = '点击查看原尺寸图';
     box.innerHTML = svg;
+    const el0 = box.querySelector('svg');
+    const vb0 = el0 && el0.viewBox && el0.viewBox.baseVal;
+    if (vb0 && vb0.width > 1200) {
+      el0.style.maxWidth = 'none';
+      el0.setAttribute('width', vb0.width);
+      el0.setAttribute('height', vb0.height);
+    }
     box.addEventListener('click', () => {
       const el = box.querySelector('svg');
       if (!el) return;
